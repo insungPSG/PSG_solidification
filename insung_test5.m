@@ -5,8 +5,8 @@ image = mat2gray(imread(sprintf('I:\\High speed camera video\\3800-4050_S0001%06
 image(1:80,1:250,:) = 0;
  
 
-image2 = image(:,:,1);
+image2 = imdage(:,:,1);
 
 
 
-imadjust(ikkkkmage);dasdfsadf2222
+imadjust(ikkkkmage);dasdfsadf22223333sadfsadfsdfsaf
