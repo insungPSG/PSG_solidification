@@ -1,5 +1,25 @@
-10/27/2021, 15:53: Insung created branch: insung. (@Enzo, feel free to create your branch)
+10/27/2021, 15:53 Insung created branch: insung. (@Enzo, feel free to create your branch)
 The name can be changed depending on our future purpose, for example, particle tracking, velocity calculation, etc. 
 If one task is done, we can merge branches into the main. 
 
-10/29/2021, 11:03: Insung uploaded droplet tracking v1, copied from Y:/4001_SharedCode/flowAnalysis
+10/29/2021, 11:03 Insung uploaded droplet tracking v1, copied from Y:/4001_SharedCode/flowAnalysis
+
+10/31/2021, 01:25 Can we use a simple code like below for velocity calculation?
+clear
+load('Y:\4000_SharedDataAnalysis\flowAnalysis\test20211022\petra21_009a_frNo_2200_3000.mat')
+age = cat(1,tracker.droplets.age);
+s.vel = struct
+for i = 1:size(age,1)
+    fprintf('# %d ... \n', i);
+    velocity_list = [];
+    centroid = tracker.droplets(i).centroid;
+    for j = 1:size(centroid,1)-1 
+        velocity = sqrt((centroid(j+1,1)-centroid(j,1))^2 + (centroid(j+1,2)-centroid(j,2))^2);
+        velocity = velocity * 1.1;
+        velocity_list = [velocity_list; velocity];
+    end
+    velocity_list = [velocity_list; 0]; % velocity cannot be calculated at the last stage
+                                        % also roughly 0, I assume.
+    s(i).vel = velocity_list;
+end
+      
