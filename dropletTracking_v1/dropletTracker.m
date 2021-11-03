@@ -1,7 +1,7 @@
 classdef dropletTracker < handle
     %DROPLETTRACKER class to track Pb liquid droplets in X-ray radiography
-    %sequences of solidifying Al alloy 
-    
+    %sequences of solidifying Al alloy
+
     % =====================================================================
     %% PROPERTIES
 
@@ -13,17 +13,17 @@ classdef dropletTracker < handle
         unassignedDetections_
         nextID_
     end
-    properties(Dependent, Hidden) % Internal use only
-        
-    end
-    
     properties(Dependent) % For user
         settings
-        ntracks
         droplets
-        velocity
+        frames
+        ntracks
     end
-    
+    properties(Dependent, Hidden) % Internal use only
+        diameter
+        velocity
+        acceleration
+    end
 
     % =====================================================================
     %% METHODS
@@ -37,7 +37,7 @@ classdef dropletTracker < handle
             arguments
                 S struct = []
             end
-            
+
             % Initialise tracks
             obj.initializeTracks;
 
@@ -51,27 +51,74 @@ classdef dropletTracker < handle
     end
 
     % PROPERTY ACCESS
-    methods 
-        function d = get.droplets(obj)
-            d = obj.tracks_;
-        end
+    methods
         function s = get.settings(obj)
             s = obj.settings_;
+        end
+        function d = get.droplets(obj)
+            ntrk = obj.ntracks; % Get number of tracks
+
+            % Extract already stored data
+            [d(1:ntrk).id]           = obj.tracks_.id;
+            [d(1:ntrk).age]          = obj.tracks_.age;
+            [d(1:ntrk).frameNo]      = obj.tracks_.frameNo;
+            [d(1:ntrk).time]         = obj.tracks_.time;
+            [d(1:ntrk).centroid]     = obj.tracks_.centroid;
+            [d(1:ntrk).diameter]     = deal(obj.diameter{:});
+            [d(1:ntrk).velocity]     = deal(obj.velocity{:});
+            [d(1:ntrk).acceleration] = deal(obj.acceleration{:});
+        end
+        function f = get.frames(obj)
+            f = unique(cat(1,obj.droplets.frameNo));
         end
         function n = get.ntracks(obj)
             n = length(obj.tracks_);
         end
+        function d = get.diameter(obj)
+            for n = 1:obj.ntracks
+               d{n,1} = [obj.tracks_(n).eqdiam] * obj.settings_.resolution;
+            end
+        end
         function v = get.velocity(obj)
-        
+            % v = [vel, vx, vy] all vel are in micron/s
             
+            for n = 1:obj.ntracks % For each droplet
+
+                % Get the centres in microns
+                centretmp = [obj.tracks_(n).centroid(:,1:2)]...
+                    * obj.settings_.resolution; % in microns
+                timeStep  = obj.tracks_(n).time(2:end) -...
+                    obj.tracks_(n).time(1:end-1); % in seconds
+                vx  = [0;...
+                    (centretmp(2:end,1) - centretmp(1:end-1,1)) ./ timeStep];
+                vy  = [0;...
+                    (centretmp(2:end,2) - centretmp(1:end-1,2)) ./ timeStep];
+                vel = sqrt(vx .^2 + vy .^2);
+                v{n,1} = [vel,vx,vy];
+            end
+        end
+        function a = get.acceleration(obj)
+            % a = [acc, ax, ay] all acc in micron/s^2
+            
+            vel = obj.velocity;
+            for n = 1:obj.ntracks % For each droplet
+                timeStep  = obj.tracks_(n).time(2:end) -...
+                    obj.tracks_(n).time(1:end-1); % in seconds
+                ax = [0;...
+                    (vel{n}(2:end,2) - vel{n}(1:end-1,2)) ./ timeStep];
+                ay = [0;...
+                    (vel{n}(2:end,3) - vel{n}(1:end-1,3)) ./ timeStep];
+                acc = sqrt(ax .^2 + ay .^2);
+                a{n,1} = [acc,ax,ay];
+            end
         end
     end
 
-    % FUNCIONALITIES
+    % TRACKING
     methods
         function step(obj,frn,P,D)
             %STEP
-           
+
             obj.predictNewLocationsOfTracks(frn,P);
             obj.detectionToTrackAssignment(frn,D.centroid);
             obj.updateAssignedTracks(D.centroid,D.bbox,D.diameter,D.meanInt);
@@ -82,6 +129,109 @@ classdef dropletTracker < handle
         end
     end
 
+    % FUNCTIONALITIES
+    methods
+        function vOut = velocities(obj,idxIn,varargin)
+            % VELOCITY return the velocity of droplets.
+            %
+            % v = velocity(obj,frames)
+            % v = velocity(obj,times,'time') NOT YET
+            % v = velocity(obj,drtIDs,'ID') NOT YET
+            % v = velocity(obj,...'parameters',...) NOT YET
+
+            % Set the form of the output data. Could be 'frame','time' or
+            % 'ID'
+            if ~isempty(varargin) && isinput('time')
+                outputType = 'time';
+            elseif ~isempty(varargin) && isinput('ID')
+                outputType = 'ID';
+            else
+                outputType = 'frame'; % Default
+            end
+
+            droplets = obj.droplets;
+            vel      = cat(1,droplets.velocity);
+            centres  = cat(1,droplets.centroid);
+            switch outputType
+                case 'frame' % all the velocity in the input frames
+                    detectionFrames = cat(1,obj.droplets.frameNo);
+                    for n = 1:numel(idxIn)
+                        idxtmp = detectionFrames == idxIn(n);
+                        vOut{n,2} = idxIn(n);
+                        vOut{n,1} = [vel(idxtmp,:),centres(idxtmp,1:2)];
+                    end
+
+
+            end
+
+
+
+
+        end
+    end
+
+    % VISUALIZATION
+    methods
+        function displaytracking(obj,frn,D,H)
+            % Convert the frame and the mask to uint8 RGB.
+            frame = im2uint8(D.img);
+            frame = insertText(frame,[50 size(frame,1)*0.9],...
+                ['FrameNo: ',num2str(frn)],'FontSize',80,'BoxColor','y',...
+                'BoxOpacity',0.4);imshow(frame)
+
+            if ~isempty(obj.tracks_)
+
+                % Noisy detections tend to result in short-lived tracks.
+                % Only display tracks that have been visible for more than
+                % a minimum number of frames.
+                reliableTrackInds = ...
+                    [obj.tracks_(:).totalVisibleCount] > obj.settings.minVisibleCount;
+                activeTrackInds = [obj.tracks_(:).active] == 1;
+                reliableTracks = obj.tracks_(reliableTrackInds & activeTrackInds);
+
+                % Display the objects. If an object has not been detected
+                % in this frame, display its predicted bounding box.
+                if ~isempty(reliableTracks)
+                    % Get bounding boxes.
+                    bboxes = cat(1, reliableTracks.bbox);
+
+                    % Get ids.
+                    ids = int32([reliableTracks(:).id]);
+
+                    % Create labels for objects indicating the ones for
+                    % which we display the predicted rather than the actual
+                    % location.
+                    labels = cellstr(int2str(ids'));
+                    predictedTrackInds = ...
+                        [reliableTracks(:).consecutiveInvisibleCount] > 0;
+                    isPredicted = cell(size(labels));
+                    isPredicted(predictedTrackInds) = {' predicted'};
+                    labels = strcat(labels, isPredicted);
+
+                    % Draw the objects on the frame.
+                    frame = insertObjectAnnotation(frame, 'rectangle', ...
+                        bboxes, labels,'FontSize',24);
+
+                    %                 % Draw the objects on the mask.
+                    %                 mask = insertObjectAnnotation(mask, 'rectangle', ...
+                    %                     bboxes, labels);
+
+                    % Display the mask and the frame.
+                    imshow(frame)
+                    pause(0.1);
+                else
+                    imshow(frame);
+                    pause(0.1);
+                end
+
+            else
+                imshow(frame);
+                pause(0.1);
+            end
+        end
+    end
+    
+    % INTERNAL USE ONLY
     methods(Access = private)
         function initializeTracks(obj)
             obj.tracks_ = newtrack;
@@ -124,9 +274,9 @@ classdef dropletTracker < handle
             end
 
             % Solve the assignment problem.
-            
+
             [assignmentstmp, unassignedTrackstmp, obj.unassignedDetections_] = ...
-                assignDetectionsToTracks(cost, obj.settings.costOfNonAssignment);
+                assignDetectionsToTracksLocal(cost, obj.settings.costOfNonAssignment);
             obj.assignments_      = [idxactive(assignmentstmp(:,1)),...
                 assignmentstmp(:,2)];
             obj.unassignedTracks_ = idxactive(unassignedTrackstmp);
@@ -231,8 +381,7 @@ classdef dropletTracker < handle
                     'totalVisibleCount', 1, ...
                     'consecutiveInvisibleCount', 0, ...
                     'active', 1, ...
-                    'intensity', intensity,...
-                    'resolution', P.resolution, ...
+                    'intensity', intensity,...%                     'resolution', P.resolution, ...
                     'frameNo',frn, ...
                     'time', P.time, ...
                     'centroid', [centroid, 1], ...
@@ -248,67 +397,9 @@ classdef dropletTracker < handle
             end
         end
     end
-    methods
-       function displaytracking(obj,frn,D,H)
-            % Convert the frame and the mask to uint8 RGB.
-            frame = im2uint8(D.img);
-            frame = insertText(frame,[50 size(frame,1)*0.9],...
-                ['FrameNo: ',num2str(frn)],'FontSize',80,'BoxColor','y',...
-                'BoxOpacity',0.4);imshow(frame)
-            
-            if ~isempty(obj.tracks_)
-                
-                % Noisy detections tend to result in short-lived tracks.
-                % Only display tracks that have been visible for more than
-                % a minimum number of frames.
-                reliableTrackInds = ...
-                    [obj.tracks_(:).totalVisibleCount] > obj.settings.minVisibleCount;
-                activeTrackInds = [obj.tracks_(:).active] == 1;
-                reliableTracks = obj.tracks_(reliableTrackInds & activeTrackInds);
-                
-                % Display the objects. If an object has not been detected
-                % in this frame, display its predicted bounding box.
-                if ~isempty(reliableTracks)
-                    % Get bounding boxes.
-                    bboxes = cat(1, reliableTracks.bbox);
-                    
-                    % Get ids.
-                    ids = int32([reliableTracks(:).id]);
-                    
-                    % Create labels for objects indicating the ones for
-                    % which we display the predicted rather than the actual
-                    % location.
-                    labels = cellstr(int2str(ids'));
-                    predictedTrackInds = ...
-                        [reliableTracks(:).consecutiveInvisibleCount] > 0;
-                    isPredicted = cell(size(labels));
-                    isPredicted(predictedTrackInds) = {' predicted'};
-                    labels = strcat(labels, isPredicted);
-                    
-                    % Draw the objects on the frame.
-                    frame = insertObjectAnnotation(frame, 'rectangle', ...
-                        bboxes, labels,'FontSize',24);
-                    
-                    %                 % Draw the objects on the mask.
-                    %                 mask = insertObjectAnnotation(mask, 'rectangle', ...
-                    %                     bboxes, labels);
-                    
-                    % Display the mask and the frame.
-                    imshow(frame)
-                    pause(0.1);
-                else
-                    imshow(frame);
-                    pause(0.1);
-                end
-                
-            else
-                imshow(frame);
-                pause(0.1);
-            end
-        end 
-    end
 end
 
+% CLASS INTERNAL FUNCTIONS
 function track = newtrack(T)
 arguments
     T.id = {}
@@ -319,7 +410,7 @@ arguments
     T.consecutiveInvisibleCount = {}
     T.active = {}
     T.intensity = {}
-    T.resolution = {}
+%     T.resolution = {}
     T.frameNo = {}
     T.time = {}
     T.centroid = {}
@@ -329,23 +420,33 @@ arguments
 end
 
 track = struct(...
-            'id', T.id, ...
-            'bbox', T.bbox, ...
-            'kalmanFilter', T.kalmanFilter, ...
-            'age', T.age, ...
-            'totalVisibleCount', T.totalVisibleCount, ...
-            'consecutiveInvisibleCount', T.consecutiveInvisibleCount, ...
-            'active', T.active,...
-            'intensity', T.intensity,...
-            'resolution', T.resolution,...
-            'frameNo', T.frameNo,...
-            'time', T.time,...
-            'centroid', T.centroid, ...
-            'eqdiam', T.eqdiam, ...
-            'vel', T.vel, ...
-            'acc', T.acc);
+    'id', T.id, ...
+    'bbox', T.bbox, ...
+    'kalmanFilter', T.kalmanFilter, ...
+    'age', T.age, ...
+    'totalVisibleCount', T.totalVisibleCount, ...
+    'consecutiveInvisibleCount', T.consecutiveInvisibleCount, ...
+    'active', T.active,...
+    'intensity', T.intensity,...%     'resolution', T.resolution,...
+    'frameNo', T.frameNo,...
+    'time', T.time,...
+    'centroid', T.centroid, ...
+    'eqdiam', T.eqdiam, ...
+    'vel', T.vel, ...
+    'acc', T.acc);
+end
+function TF = isinput(inputs,argument)
+
+if any(strcmpi((inputs),argument))
+    TF = 1;
+else
+    TF = 0;
 end
 
+end
+function v = velCalculator()
+
+end
 %% DEVELOPMENT NOTES:
 
 % LAST UPDATE: 20211017 - EL
