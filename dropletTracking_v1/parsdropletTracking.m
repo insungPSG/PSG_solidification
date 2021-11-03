@@ -65,16 +65,20 @@ TR.InitialEstimateError = [200, 100];
 TR.MotionNoise          = [150, 150];
 TR.MeasurementNoise     = 25;
 TR.minVisibleCount      = 2;
+TR.resolution           = resolution;
+% TR.singleFrameTimeStep  = 1/frameRate;
 
 % ==========================================================================
 % RESULTS SAVING INFO 
 
 % ### Folder path
-resultFolder = 'Y:\4000_SharedDataAnalysis\flowAnalysis'; %'G:\02_DataAnalysis\FluidFlow\Al-Pb_monotectic\Results_bulkLiquid\20190404';
+resultFolder = 'Y:\4000_SharedDataAnalysis\flowAnalysis\EnzoTests'; %'G:\02_DataAnalysis\FluidFlow\Al-Pb_monotectic\Results_bulkLiquid\20190404';
 
 % ### File name
 expCondition = '';
-annotation   = '';
+annotation   = ['_',datestr(datetime,'_yyyymmdd_HH_MM_SS')];
+
+
 resultFileName = [name,...
     '_frNo_',num2str(frameRange(1)),'_',num2str(frameRange(end)),...
     expCondition,annotation];

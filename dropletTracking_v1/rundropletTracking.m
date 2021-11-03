@@ -35,11 +35,12 @@ for frn = P.frameRange
         save(P.resultFilePath,'tracker');
     end
     if P.saveVideoFlag
-%         writeVideo(H.vid,getframebg(H.fig));
-        writeVideo(H.vid,getframe(H.fig)); % want to figure out getframe or getframbg?
+        writeVideo(H.vid,getframebg(H.fig));
+%         writeVideo(H.vid,getframe(H.fig)); % want to figure out getframe or getframbg?
     end
     
-    waitbar(m / numel(P.frameRange)),H.w,... 
+    waitbar(m / numel(P.frameRange),H.w,...
+        sprintf('Frame no. %i',frn));
     
     m = m + 1;
     
