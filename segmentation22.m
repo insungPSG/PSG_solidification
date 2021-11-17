@@ -1,6 +1,6 @@
 load('X:\4000_SharedDataAnalysis\Xray_Objs\petra21_009aEnzoTest.mat')
-
-for frame = 2300:4400
+petra21_009a.changefolder('X:\2021\I20210153\0009_a')
+for frame = 2800:2800
     fprintf('Saving frame # %d ... \n',frame);
     a = imshowxray(petra21_009a, frame, 'nofigure'); 
 
@@ -32,11 +32,49 @@ for frame = 2300:4400
             BW2(BW(i).PixelIdxList) = 1;
         end
     end
-    A = [a, BW2];
-    imwrite(mat2gray(A), sprintf('X:\\Insung_\\shrinkage\\petra009_segmentation\\%04d.tiff', frame), ...
-       'compression', 'none');
+%     A = [a, BW2];
+%     imwrite(mat2gray(A), sprintf('X:\\Insung_\\shrinkage\\petra009_segmentation\\%04d.tiff', frame), ...
+%        'compression', 'none');
+    
+    a3 = estimateFlow(opticalFlowHS,a2); %opticalFlowHS, opticalFlowFarneback, opticalFlowLK, opticalFlowLKDoG
 
+    a_mag = mat2gray(a3.Magnitude);
+%     a_ori = mat2gray(a3.Orientation);
+%     a_vx = mat2gray(a3.Vx);
+%     a_vy = mat2gray(a3.Vy);
+    
+    a_mag2 = a_mag > 0.80;
+    
+    T = logical(BW2) + a_mag2;
+    TT = find(T==2);
+    
+    BW3 = regionprops(logical(BW2), 'area', 'BoundingBox', 'PixelIdxList','MajorAxisLength', 'MinorAxisLength');
+    
+    overlap_particles = [];
+    for i = 1:size(BW3,1)
+        [val,~] = intersect(TT,BW3(i).PixelIdxList);
+        if isnumeric(val)
+            overlap_particles = [overlap_particles;i];
+        else
+        end
+    end
+    
+    BW4 = zeros(size(BW2,1),size(BW2,2));
+    
+    for ii = 1:size(overlap_particles,1)
+        BW4(BW3(overlap_particles(ii)).PixelIdxList) = 1;
+    end
+    
+%     figure; imshow(BW4,[]);
+    
 end
+
+
+
+
+
+
+
 %     AA = imfuse(a,BW2);
     % BW3 = regionprops(a4, 'area', 'BoundingBox', 'PixelIdxList','MajorAxisLength', 'MinorAxisLength');
 %     imwrite(mat2gray(aa), sprintf('Y:\\Insung_\\shrinkage\\hottear009_1300_end_1_1200\\%04d.tiff', frame), ...
