@@ -1,0 +1,8 @@
+thresh = multithresh(normalise(i),3);
+seg_I = imquantize(i,thresh);
+% RGB = label2rgb(seg_I); 	 
+figure;
+% imagesc(seg_I.*(seg_I<=3)),colormap(jet(4))
+imshowpair(i,seg_I<=1);
+axis off
+title('RGB Segmented Image')
